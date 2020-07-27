@@ -18,168 +18,30 @@
 
 # %%
 from boot_utes import add_path, path, reload, run_magics
+add_path(
+    "..", "../fis/", "~/repos/myutils/",
+)
+add_path("/Users/wbeard/repos/dscontrib-moz/src/")
+
+# %%
 from matplotlib import MatplotlibDeprecationWarning
 
-add_path('..', '../fis/', '~/repos/myutils/', )
-add_path("/Users/wbeard/repos/dscontrib-moz/src/")
 import dscontrib.wbeard as dwb
+from utils.fis_imps import *
 
-from utils.fis_imps import *; exec(pu.DFCols_str); exec(pu.qexpr_str); run_magics()
+exec(pu.DFCols_str)
+exec(pu.qexpr_str)
+run_magics()
 # import utils.en_utils as eu; import data.load_data as ld; exec(eu.sort_dfs_str)
 
+mu.set_import_name(mu)
 sns.set_style("whitegrid")
-A.data_transformers.enable("json", prefix="data/altair-data")
 S = Series
 D = DataFrame
-# %% [markdown]
-# # Load
-
-# %%
-s = """
-() AS ("{\"buck
-"""
-# .replace('\"', 'q')
-print(s)
-print(s.replace('\"', 'q'))
-
-
-# %%
-q = '''
--- `mozfun.hist.merge`(ARRAY_AGG(`mozfun.hist.extract`(h)))
--- hmerge(ARRAY_AGG(hist(h)))
-CREATE TEMP FUNCTION hist_(h ANY TYPE) AS (`mozfun.hist.extract`(h));
-CREATE TEMP FUNCTION hist100(h ANY TYPE) AS (`mozfun.hist.extract`(coalesce(h, null_hist_str100())));
-CREATE TEMP FUNCTION hist1e4(h ANY TYPE) AS (`mozfun.hist.extract`(coalesce(h, null_hist_str10000())));
-CREATE TEMP FUNCTION hmerge(h ANY TYPE) AS (`mozfun.hist.merge`(h));
-CREATE TEMP FUNCTION get_key(hist ANY TYPE, k string) AS (`mozfun.map.get_key`(hist, k));
-
--- CREATE TEMP FUNCTION null_hist_str() AS ("{\\"bucket_count\\":50,\\"histogram_type\\":0,\\"sum\\":0}");
-CREATE TEMP FUNCTION null_hist_str100() AS ("{\\"bucket_count\\":50,\\"histogram_type\\":0,\\"sum\\":0,\\"range\\":[1,100]}");
-CREATE TEMP FUNCTION null_hist_str10000() AS ("{\\"bucket_count\\":50,\\"histogram_type\\":0,\\"sum\\":0,\\"range\\":[1,10000]}");
-
-CREATE TEMP FUNCTION hist_str_to_mean(hist ANY TYPE) AS (
-  `moz-fx-data-shared-prod.udf.histogram_to_mean`(`moz-fx-data-shared-prod.udf.json_extract_histogram`(hist))
-);
-
-
-/*
-unq_tabs: {"bucket_count":50,"histogram_type":0,"sum":2,"range":[1,100],"values":{"0":0,"1":2,"2":0}}
-*/
-CREATE TEMP FUNCTION major_vers(st string) AS (
-  -- '10.0' => 10
-  cast(regexp_extract(st, '(\\\\d+)\\\\.?') as int64)
-);
-
-
-with base as (
-select
-  m.client_id,
-  submission_timestamp as ts,
-  
-  m.payload.histograms.fx_number_of_unique_site_origins_all_tabs as unq_tabs,
-  m.payload.histograms.fx_number_of_unique_site_origins_per_document as unq_sites_per_doc,
-  m.payload.histograms.cycle_collector as cycle_collector,
-  m.payload.histograms.cycle_collector_max_pause as cycle_collector_max_pause,
-  m.payload.histograms.cycle_collector_slice_during_idle as cycle_collector_slice_during_idle,
-  -- cycle_collector_slice_during_idle
-  m.payload.histograms.gc_max_pause_ms_2 as gc_max_pause_ms_2,
-  m.payload.histograms.gc_ms as gc_ms,
-  m.payload.histograms.gc_slice_during_idle as gc_slice_during_idle,
-  
-  coalesce(m.environment.system.gfx.features.wr_qualified.status, '') = 'available' as wr_av,
-  get_key(m.environment.experiments, 'bug-1622934-pref-webrender-continued-v2-nightly-only-nightly-76-80').branch is null as no_wr_exp,
-  sample_id,
-from `moz-fx-data-shared-prod.telemetry.main` m
-where
-  date(m.submission_timestamp) between '2020-06-21' and '2020-06-21'
-  and m.normalized_channel = 'nightly'
-  and m.normalized_app_name = 'Firefox'
-  and sample_id between 1 and 1
---   and major_vers(m.normalized_os_version) = 10
-)
-
-, b1 as (
-select
-  client_id,
-  unq_tabs as hu,
-  cycle_collector as cc,
---   hist(null_hist_str100()) as nh,
---   cycle_collector,
---   null_hist_str100() as nhs,
-
---   count(*) over (partition by client_id) as cid_n,
---   dense_rank() over (order by client_id) as cid,
-
---   coalesce(unq_tabs, ""),
---   hist(coalesce(unq_tabs_mean, "")),
---   hmerge(ARRAY_AGG(hist(cycle_collector))) as cycle_collector,
---   hist(unq_tabs),
---   hist(cycle_collector) as cc,
---   hmerge(ARRAY_AGG(hist(unq_tabs))) as unq_tabs_mean
-from base
-where
-  client_id = '01308377-38f1-46d7-b008-ee0f2fc90164'
-)
-
-
-, b2 as (
-select
-  client_id,
-  hist100(null_hist_str100()) as nh,
-
-  count(*) over (partition by client_id) as cid_n,
-  dense_rank() over (order by client_id) as cid,
---   coalesce(unq_tabs, ""),
---   hist(coalesce(unq_tabs_mean, "")),
-  hmerge(ARRAY_AGG(hist100(cycle_collector))).values as cycle_collector,
-  hmerge(ARRAY_AGG(hist100(unq_tabs))).values as unq_tabs,
-from base
-where
-  client_id = '01308377-38f1-46d7-b008-ee0f2fc90164'
-group by 1
-)
-
-
-
-select
-  *,
-from b2
--- where
---   cid_n > 1
-'''
-
-# %%
-
-# %%
-sql = mu.read('../fis/data/hist_data_proto.sql')
-df_ = bq_read(sql)
-
-# %%
-
 # %%
 from numba import typed
 
-def typed_dict(d):
-    nd = typed.Dict()
-    for k, v in d.items():
-        nd[k] = v
-    return nd
-
-def typed_list(l):
-    tl = typed.List()
-    for e in l:
-        tl.append(e)
-    return tl
-
-def arr_of_str2dict_(arr):
-    """
-    [{'key': 0, 'value': 0}, {'key': 1, 'value': 1}] -> {1: 1}
-    """
-    return {d["key"]: d["value"] for d in arr if d["value"]}
-
-
-arr_of_str2dict = z.compose(typed_dict, arr_of_str2dict_)
-hist_cols = [
+_hist_cols = [
     "unq_tabs",
     "unq_sites_per_doc",
     "cycle_collector_slice_during_idle",
@@ -189,42 +51,44 @@ hist_cols = [
     "gc_max_pause_ms_2",
     "gc_ms",
 ]
-h_kw = {h: lambda df, h=h: df[h].map(arr_of_str2dict) for h in hist_cols}
-df = df_.assign(**h_kw)
+
+# h_kw = {h: lambda df, h=h: df[h].map(arr_of_str2dict) for h in hist_cols}
+# df = df_.assign(**h_kw)
+
+# %%
+import utils.fis_utils as fu
+
+import fis.data.load_crap as lc
+import dscontrib.wbeard.altair_utils as aau
+
+aau.set_ds(A)
+
+DataFrame.pat = aau.pat
+
+# %%
+df = lc.load(0, bq_read=bq_read, sqlfn="../fis/data/hist_data_proto.sql", dest="/tmp/hists.pq")
+len(df)
+
+# %%
+df[:3]
+
 
 # %% [markdown]
 # # Raw histograms
 
 # %%
-len(df)
-
-# %%
-s = df_.cycle_collector[0]
-s
-
-# %%
-arr_of_str2dict(s)
-
-# %%
-df[:3]
-
-# %%
-/list df
-
+# sql = mu.read("../fis/data/hist_data_proto.sql")
+# df_ = bq_read(sql)
 
 # %%
 def hist2null(s):
     return s.map(len) == 0
 
 
-get_all_keys = lambda srs: sorted({k for doc in srs for k in doc})
-all_keys = get_all_keys(df.cycle_collector_max_pause)
-k2ix = {k: i for i, k in enumerate(all_keys)}
-ix2k = {v: k for k, v in k2ix.items()}
-# k2ix
-
-# %%
-len(all_keys)
+# all_keys = get_all_keys(df.cycle_collector_max_pause)
+# k2ix = {k: i for i, k in enumerate(all_keys)}
+# ix2k = {v: k for k, v in k2ix.items()}
+# # k2ix
 
 # %%
 d = {2: 1, 6: 1, 7: 1}
@@ -236,128 +100,373 @@ arr = np.zeros(48, np.int64)
 dict2array(nd, k2ix, arr)
 
 # %%
-del k2ix, all_keys, ix2k
-
-# %%
-from fis.models import hist
 import attr
+from fis.models import hist
 
-@njit
-def dict2array(d, k2ix, arr):
-    for k, v in d.items():
-        ix = k2ix[k]
-        arr[ix] = v
-    return arr
+# s = df.pipe(lambda df: df[df.cycle_collector.map(len) > 0]).cycle_collector
+# h = hist.Hist(s)
 
-@njit
-def dicts2arrays(ds, k2ix):
-    D = len(ds)
-    arr = np.zeros((D, len(k2ix)), np.int64)
-    
-    for i in range(D):
-        dict2array(ds[i], k2ix, arr[i])
-    return arr
-    
+_df = df.pipe(lambda df: df[df.cycle_collector.map(len) > 0])
+d1 = _df.query("br == 'enabled'")
+d2 = _df.query("br == 'disabled'")
 
-class Hist:
-    def __init__(self, s):
-        self.name = s.name
-        
-        self.all_keys = get_all_keys(s)
-        self.k2ix = k2ix= typed_dict({k: i for i, k in enumerate(self.all_keys)})
-        self.ix2k = ix2k = typed_dict({v: k for k, v in self.k2ix.items()})
-        self.ks = sorted(k2ix)
-        
-        self.dct_lst = ds = typed_list(s)
-        self.p_arr = p = dicts2arrays(ds, k2ix)
-        self.p_norm = p / p.sum(axis=1)[:, None]
+s1 = d1.cycle_collector
+s2 = d2.cycle_collector
 
-    
-# ds = typed_list([d, d])
-# dicts2arrays(ds, k2ix)
+h1 = hist.Hist(s1)
+h2 = hist.Hist(s2)
 
-s = df.pipe(lambda df: df[df.cycle_collector.map(len) > 0]).cycle_collector
-h = Hist(s)
+d1 = _df.query("date == '2020-06-25'")
+hb1 = d1.query("br == 'enabled'").pipe(lambda x: hist.Hist(x.cycle_collector))
+hb2 = d1.query("br == 'disabled'").pipe(lambda x: hist.Hist(x.cycle_collector))
+
+# %%
+d1.date.value_counts(normalize=0)
+
+# %%
+hb2.dir_alpha_all_sqrt
+# .sum(axis=1)
+
+# %% [markdown]
+# ### Square root?
+
+# %%
+nr_ = 1; nc = 3
+all_splts, spi = mu.mk_sublots(nrows=nr_, ncols=nc, figsize=(nc * 8, nr_ * 5), sharex=False)
+
+a = hb1.p_arr.sum(axis=1)
+spi.n
+plt.hist(a, bins=100, density=1, alpha=.5);
+spi.n
+plt.hist(a ** .5, bins=100, density=1, alpha=.5);
+spi.n
+plt.hist(np.log(a), bins=100, density=1, alpha=.5);
+
+# %%
+plt.hist(hb1.p_arr.sum(axis=1), bins=100, density=1, alpha=.5);
+
+
+# %%
+def est_statistic(h1, n_hists=10_000, client_draws=10, stat_fn=np.mean, ret_quantiles=[.05, .5, .95]):
+    sampled_hists = nr.dirichlet(h1.dir_alpha_all_sqrt, size=n_hists)
+    means = []
+    for hist in sampled_hists:
+        samps_i = nr.choice(h1.ks, p=hist, size=client_draws)
+        means.append(stat_fn(samps_i))
+    if ret_quantiles is not None:
+        qs = np.quantile(means, ret_quantiles)
+        return dict(zip(map(fu.rn_prob_col, ret_quantiles), qs))
+    return means
+
+
+sampled_means = est_statistic(h1)
+sampled_means
+
+# %%
+/len h1.p_arr
 
 # %%
 
+# %%
+gmean = lambda x: sts.gmean(x + 1e-6)
+est_statistic(h1, stat_fn=gmean)
+
+
+# %%
+def agg_hist(s, stat_fn=gmean):
+    h = hist.Hist(s)
+    return est_statistic(
+        h, n_hists=10_000, client_draws=10, stat_fn=stat_fn, ret_quantiles=[.05, .5, .95]
+    )
+
+agg_gmean = partial(agg_hist, stat_fn=gmean)
+agg_med = partial(agg_hist, stat_fn=np.median)
+
+# %%
+# aggd = _df.groupby(["date", "br"])[c.cycle_collector].apply(agg_gmean).unstack().fillna(0)
+_agg_med = _df.groupby(["date", "br"])[c.cycle_collector].apply(agg_med).unstack().fillna(0)
+
+
+# %%
+class Branches:
+    def __init__(self, aggd):
+        self.en = aggd.xs('enabled', level=-1).reset_index(drop=0)
+        self.dis = aggd.xs('disabled', level=-1).reset_index(drop=0)
     
+    def pat(self):
+        p1 = self.en.pat(x='date', y='p50', e1='p05', e2='p95', st='-', nz=0)
+        p2 = self.dis.pat(x='date', y='p50', e1='p05', e2='p95', st='-', nz=0)
+        return p1 + p2
+
+
+# %%
+Branches(aggd).pat()
+
+# %%
+Branches(_agg_med).pat()
+
+# %%
+_en = aggd.xs('enabled', level=-1).reset_index(drop=0)
+_dis = aggd.xs('disabled', level=-1).reset_index(drop=0)
+_en
+
+# %%
+
+# %%
+_en.pat(x='date', y='p50', e1='p05', e2='p95', st='-', nz=0)
+
+# %%
+
+# %%
+est_statistic(h2, stat_fn=gmean)
+
+# %%
+est_statistic(h2)
+
+# %% jupyter={"outputs_hidden": true}
+n_hists = 10
+client_draws = 100
+hists3 = nr.dirichlet(hb2.dir_alpha_all, r)
+for hist in hists3:
+    samps = nr.choice(k, p=hist, n=client_draws)
+
+
+# %%
+plt.plot(hb1.dir_alpha_all)
+# plt.plot(hb2.dir_alpha_all)
+
+# %%
+plt.plot(hb1.dir_alpha_all_sqrt)
+
+# %%
+plt.plot(h1.dir_alpha_all)
+plt.plot(h2.dir_alpha_all)
+
+# %%
+print(h1.dir_alpha_all)
+print(h2.dir_alpha_all)
+
+# %%
+renorm
+
+
+# %%
+h1.dir_alpha_all.sum()
+
+# %%
+samps1 = h1.sample_geo_means(10, 1_000)
+samps2 = h2.sample_geo_means(10, 1_000)
+
+
+# %%
+def agg_hists(hs, qs=[.1, .5, .9]):
+    hs = hs[hs.map(len) > 0]
+    h1 = hist.Hist(hs)
+    r = h1.sample_geo_means(10, 1_000)
+    return dict(zip('p10 p50 p90'.split(), np.quantile(r, qs)))
+
+agg_hists(s1, qs=[.05, .5, .95])
+
+# %%
+samp_df_dir = (
+    df.groupby([c.br, c.date])
+    .cycle_collector.apply(z.comp(agg_hists))
+    .unstack()
+    .fillna(0)
+    .reset_index(drop=0)
+)
+
+# %% jupyter={"outputs_hidden": true}
+samp_df_dir
+
+
+# %%
+
+# %%
+def _pl(samp_df_dir):
+    color = 'br'
+    x = "date"
+    y = 'p50'
+
+    h = Chart(samp_df_dir).mark_line().encode(
+        x=A.X(x, title=x),
+        y=A.Y(y, title=y, scale=A.Scale(zero=False)),
+        color=color,
+        tooltip=[color, x, y]
+    )
+    err = h.mark_errorband().encode(y='p10', y2='p90')
+    return h + err
+
+    return (h + h.mark_point()).interactive()
+
+_pl(samp_df_dir)
+
+# %% jupyter={"outputs_hidden": true}
+# gb.apply?
+
+# %%
+
+# %%
+plt.hist(samps1, bins=10, density=1, alpha=1)
+plt.hist(samps2, bins=10, density=1, alpha=.1)
+None
+
+# %%
+df.br.unique()
+
+# %%
 hi = hist.sample_arr(100, 30, h.p_norm, h.ks)
 hi
 
 # %%
-df.cycle_collector
+hi
 
 # %%
-len(df)
+# dir_alpha = prob2dir_alpha(h.p_arr)
+# dir_alpha_all = h.p_arr.sum(axis=0)
 
-# %%
-len(h.p_norm)
-
-# %%
-h.ix2k[4]
-
-# %%
-nr.choice(h.ks, size=40, p=hi)
-
-# %%
-h.ks
-
-# %%
 p = h.p_arr
 p
 
 
 # %%
-def prob2dir_alpha(p):
-    pp1 = p + 1
-    sa = pp1.sum(axis=1)[:, None]
 
-    return pp1 / sa
+# %%
+# @njit
+def samp_dir(dir_alpha, n_dists):
+    m = nr.dirichlet(dir_alpha, size=n_dists)
+    return gmean(m)
 
-dir_alpha = prob2dir_alpha(h.p_arr)
+
+# %%
+@njit
+def gmean_hist1d_(hist_a_cts, lks):
+    s, n = 0, 0
+    for ct, lk in zip(hist_a_cts, lks):
+        s += ct * lk
+        n += ct
+    return s, n
+
+@njit
+def gmean_hist1d(hist_a_cts, lks):
+    s, n = gmean_hist1d_(hist_a_cts, lks)
+    return np.exp(s / n)
+
+@njit
+def gmean_hist2d(hist_a_cts_arr, ks, eps=1e-6):
+    lks = np.log(ks + eps)
+    s, n = 0, 0
+    for hist in hist_a_cts_arr:
+        s_, n_ = gmean_hist1d_(hist, lks)
+        s += s_
+        n += n_
+    return np.exp(s / n)
+
+
+def enumerate_hists(counts=h.p_arr, ks=h.ks, eps=1e-6):
+    enumerated_vals = [
+        e
+        for hist in counts
+        for val, ct in zip(ks, hist)
+        for e in [val] * ct
+    ]
+
+    enumerated_vals = np.array(enumerated_vals)
+    return sts.gmean(enumerated_vals + eps)
+
+def test_gmean_hist2d(counts=h.p_arr, ks=h.ks, eps=1e-6):
+    est1 = enumerate_hists(counts, ks, eps)
+    est2 = gmean_hist2d(h.p_arr, np.array(h.ks), eps=eps)
+    assert est1 == est1
+
+
+# %%
+def sample_geo_means(dir_params, ks, n_hists):
+    ks = np.asarray(ks)
+    hists = nr.dirichlet(dir_params, size=n_hists)    
+    return gmean_hist2d(hists, ks, eps=1e-6)
+
+def sample_geo_means_rep(dir_params, ks, n_hists, n_reps):
+    return np.array([sample_geo_means(dir_params, ks, n_hists) for _ in range(n_reps)])
+
+# sample_geo_means(dir_alpha_all, h.ks, 100)
+
+samp_geo_means = sample_geo_means_rep(h.dir_alpha_all, h.ks, 100, 1_000)
+np.percentile(samp_geo_means, [5, 50, 95])
+
+# %%
+samp_geo_means = sample_geo_means_rep(h1.dir_alpha_all, h.ks, 100, 1_000)
+np.percentile(samp_geo_means, [5, 50, 95])
+
+# %%
+samp_geo_means = sample_geo_means_rep(h2.dir_alpha_all, h.ks, 100, 1_000)
+np.percentile(samp_geo_means, [5, 50, 95])
+
+# %%
+plt.hist(samp_geo_means, bins=100, density=1, alpha=.5)
+None
+
+# %%
+# enumerate_hists(counts=h.p_arr, ks=h.ks, eps=1e-6)
+# test_gmean_hist2d(counts=h.p_arr, ks=h.ks, eps=1e-6)
+
+gmean_hist1d(h.p_arr[0], np.log(np.array(h.ks) + 1e-6))
+
+# %%
+gmean_hist2d(h.p_arr, np.array(h.ks))
+
+# %%
+# %timeit enumerate_hists(counts=h.p_arr, ks=h.ks, eps=1e-6)
+# %timeit gmean_hist2d(h.p_arr, np.array(h.ks))
+
+# %%
+d = (
+    DataFrame(
+        dict(
+            c=h.p_arr[0],
+            k=h.ks
+            #                    np.log(np.array(h.ks) + 1e6),
+        )
+    )
+    .query("c > 0")
+    .assign(lk=lambda df: np.log(df.k + 1e-6))
+)
+mu = d.lk.mean()
+print(mu)
+print(np.exp(mu))
+d
+
+
+# %%
+def gmean_s(s):
+    s = s.values
+    return sts.gmean(s + 1) - 1
+
+@njit
+def gmean(a):
+    return sts.gmean(a + 1) - 1
+
+# sts.gmean()
+
+# samp_dir(dir_alpha_all, 5, )
+
+
+# %%
+nr.dirichlet(dir_alpha_all, size=1)
 
 # %%
 dir_alpha[0]
 
 # %%
-_dir_draw = nr.dirichlet(dir_alpha.T, 2)
-np.round(_dir_draw, 2)
-
-# %%
-p / p.sum(axis=1)
-
-# %%
-nr.dirichlet([
-    [  0,   0,   1,   0,   0,   0,   1,   1,   0,   0,   0,   0,   0,
-          0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0],
-    [  0,   0,   1,   0,   0,   0,   1,   1,   0,   0,   0,   0,   0,
-          0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0]
-])
-
-# %%
-nr.choice(h.ks, p=h.p_arr)
-
-# %%
-h.p_arr
-
-# %%
-# ix2k
-
-# %%
-s = df.cycle_collector[:5].pipe(typed_list)
-s
-
-# %%
-dicts2arrays(s, k2ix)
+dir_alpha
 
 
 # %%
 def build_dist_arr(s):
     all_keys = get_all_keys(s)
-    
-# all_keys
 
+
+# all_keys
 
 # %%
 df.cycle_collector[0]
@@ -373,5 +482,5 @@ df
 # # Just the means
 
 # %%
-sql = mu.read('../fis/data/hist_data_means_proto.sql')
+sql = mu.read("../fis/data/hist_data_means_proto.sql")
 dfm_ = bq_read(sql)
