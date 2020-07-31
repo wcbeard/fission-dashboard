@@ -1,8 +1,15 @@
+from typing import Dict
+
 import numpy.random as nr  # type: ignore
 import numpy as np
 from numba import njit, typed  # type: ignore
-
 import scipy.stats as sts  # type: ignore
+
+import fis.utils.fis_utils as fu
+
+
+def identity(x):
+    return x
 
 
 def get_all_keys(srs):
@@ -141,8 +148,61 @@ class Hist:
             [self.sample_geo_means1(n_hists) for _ in range(n_reps)]
         )
 
+    @staticmethod
+    def normp(p, fn=identity):
+        """
+        Normalize the histograms [n x K]
+        - K: cardinality of support
+        - n: # clients
+        if `fn` is identity function, then each row
+        will sum to 1. This gives every client equal
+        weight. This can be transformed so a user
+        w/ high counts contributes a higher weight
+        """
+        if fn is None:
+            return p
+        hist_sum = p.sum(axis=1)
+        hist_sum = fn(hist_sum)
+        return p / hist_sum[:, None]
+
+    def to_dict(self, fn=identity):
+        vs = self.normp(self.p_arr, fn=fn).sum(axis=0)
+        return dict(zip(self.ks, vs))
+
+
+def est_statistic(
+    dir_dict: Dict[int, float],
+    n_hists=10_000,
+    client_draws=10,
+    stat_fn=np.mean,
+    ret_quantiles=[.05, .5, .95],
+):
+    dir_dict = sorted(dir_dict.items())
+    ks, alpha = zip(*dir_dict)
+    # h1.dir_alpha_all_sqrt
+    sampled_hists = nr.dirichlet(alpha, size=n_hists)
+    stats = []
+    for hist in sampled_hists:
+        samps_i = nr.choice(ks, p=hist, size=client_draws)
+        stats.append(stat_fn(samps_i))
+    if ret_quantiles is not None:
+        qs = np.quantile(stats, ret_quantiles)
+        return dict(zip(map(fu.rn_prob_col, ret_quantiles), qs))
+    return stats
+
 
 def test_gmean_hist2d(counts, ks, eps=1e-6):
     est1 = enumerate_hists(counts, ks, eps)
     est2 = gmean_hist2d(counts, np.array(ks), eps=eps)
     assert est1 == est2
+
+
+def test_normp():
+    a = np.array([[2, 2], [8, 8]])
+    n = Hist.normp(a, fn=identity)
+    should_be = np.array([[0.5, 0.5], [0.5, 0.5]])
+    assert (n == should_be).all()
+    ns = Hist.normp(a, fn=np.sqrt)
+    should_be2 = np.array([[1, 1], [2, 2]])
+    assert (ns == should_be2).all()
+    return ns

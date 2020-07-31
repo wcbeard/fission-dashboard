@@ -57,6 +57,7 @@ _hist_cols = [
 
 # %%
 import utils.fis_utils as fu
+import utils.vis as vz
 
 import fis.data.load_crap as lc
 import dscontrib.wbeard.altair_utils as aau
@@ -71,6 +72,37 @@ len(df)
 
 # %%
 df[:3]
+
+# %% [markdown]
+# # ETL
+
+# %%
+import fis.data.load_agg_hists as loh
+from fis.utils import bq
+
+# %%
+sql = loh.main(sub_date_end='2020-06-01', sample=1)
+
+# %%
+# df_ = bq.bq_query(sql)
+# df = proc_df(df_)
+
+# %%
+df.iloc[:, :4]
+
+# %%
+dest = bq.BqLocation('wbeard_fission_test_dirp', dataset='analysis',
+    project_id='moz-fx-data-shared-prod')
+bq.bq_upload(df.iloc[:, :4], dest.no_tick)
+
+# %%
+f"""select * from {bq.bq_locs['input_data'].sql}"""
+
+# %%
+dfh = bq.bq_query(f"""select * from {bq.bq_locs['input_data'].sql}""")
+
+# %%
+dfh2 = bq.bq_query(loh.dl_agg_query())
 
 
 # %% [markdown]
@@ -121,7 +153,18 @@ hb1 = d1.query("br == 'enabled'").pipe(lambda x: hist.Hist(x.cycle_collector))
 hb2 = d1.query("br == 'disabled'").pipe(lambda x: hist.Hist(x.cycle_collector))
 
 # %%
-d1.date.value_counts(normalize=0)
+_h = hist.Hist(s1[:4])
+
+# %%
+_h.p_arr
+
+# %% [markdown]
+# ### Histogram playground
+
+# %%
+s1 = d1.cycle_collector
+h1 = hist.Hist(s1)
+
 
 # %%
 hb2.dir_alpha_all_sqrt
@@ -143,48 +186,76 @@ spi.n
 plt.hist(np.log(a), bins=100, density=1, alpha=.5);
 
 # %%
-plt.hist(hb1.p_arr.sum(axis=1), bins=100, density=1, alpha=.5);
+dt.datetime.now() - pd.Timedelta(hours=18)
 
 
 # %%
-def est_statistic(h1, n_hists=10_000, client_draws=10, stat_fn=np.mean, ret_quantiles=[.05, .5, .95]):
-    sampled_hists = nr.dirichlet(h1.dir_alpha_all_sqrt, size=n_hists)
-    means = []
-    for hist in sampled_hists:
-        samps_i = nr.choice(h1.ks, p=hist, size=client_draws)
-        means.append(stat_fn(samps_i))
-    if ret_quantiles is not None:
-        qs = np.quantile(means, ret_quantiles)
-        return dict(zip(map(fu.rn_prob_col, ret_quantiles), qs))
-    return means
+def plot_pareto(a):
+    n = len(a)
+    a = np.sort(a)[::-1]
+    apct = (a / a.sum()).cumsum()
+    plt.plot(np.linspace(0, 100, n), apct)
 
 
-sampled_means = est_statistic(h1)
+# %%
+plot_pareto(a)
+plot_pareto(np.sqrt(a))
+
+# %%
+# sampled_means = est_statistic(h1)
+sampled_means = hist.est_statistic(h1.to_dict())
+sampled_means
+
+# %%
+# sampled_means = est_statistic(h1)
+sampled_means = hist.est_statistic(dict(zip(h1.ks, h1.dir_alpha_all_sqrt)))
 sampled_means
 
 # %%
 /len h1.p_arr
 
 # %%
+_paggd = aggd.reset_index(drop=0)
+_paggd[:3]
 
 # %%
 gmean = lambda x: sts.gmean(x + 1e-6)
-est_statistic(h1, stat_fn=gmean)
+hist.est_statistic(h1.to_dict(), stat_fn=gmean)
 
 
 # %%
-def agg_hist(s, stat_fn=gmean):
+def agg_hist(s, stat_fn=gmean, fn=z.identity):
     h = hist.Hist(s)
-    return est_statistic(
-        h, n_hists=10_000, client_draws=10, stat_fn=stat_fn, ret_quantiles=[.05, .5, .95]
+    d = h.to_dict(fn=fn)
+    return hist.est_statistic(
+        d, n_hists=10_000, client_draws=10, stat_fn=stat_fn, ret_quantiles=[.05, .5, .95]
     )
 
 agg_gmean = partial(agg_hist, stat_fn=gmean)
+agg_gmean2 = partial(agg_hist, stat_fn=gmean, fn=np.sqrt)
+agg_gmean3 = partial(agg_hist, stat_fn=gmean, fn=None)
+agg_mean = partial(agg_hist, stat_fn=np.mean)
 agg_med = partial(agg_hist, stat_fn=np.median)
 
 # %%
-# aggd = _df.groupby(["date", "br"])[c.cycle_collector].apply(agg_gmean).unstack().fillna(0)
-_agg_med = _df.groupby(["date", "br"])[c.cycle_collector].apply(agg_med).unstack().fillna(0)
+# _agg_geo = _df.groupby(["date", "br"])[c.cycle_collector].apply(agg_gmean).unstack().fillna(0)
+# _agg_geo2 = _df.groupby(["date", "br"])[c.cycle_collector].apply(agg_gmean2).unstack().fillna(0)
+_agg_geo3 = _df.groupby(["date", "br"])[c.cycle_collector].apply(agg_gmean3).unstack().fillna(0)
+# _agg_mean = _df.groupby(["date", "br"])[c.cycle_collector].apply(agg_mean).unstack().fillna(0)
+# _agg_med = _df.groupby(["date", "br"])[c.cycle_collector].apply(agg_med).unstack().fillna(0)
+
+# %%
+r1 = vz.plot_errb(_agg_geo.reset_index(drop=0)) | vz.plot_errb(
+    _agg_mean.reset_index(drop=0)
+)
+r2 = (
+    vz.plot_errb(_agg_geo3.reset_index(drop=0)).properties(title="Unnormalized--")
+    | vz.plot_errb(_agg_geo.reset_index(drop=0)).properties(
+        title="Normalize-all clients same weight"
+    )
+    | vz.plot_errb(_agg_geo2.reset_index(drop=0)).properties(title="Normalize-Sqrt")
+)
+r2.resolve_scale(y="shared")
 
 
 # %%
@@ -200,22 +271,12 @@ class Branches:
 
 
 # %%
-Branches(aggd).pat()
-
-# %%
-Branches(_agg_med).pat()
-
-# %%
-_en = aggd.xs('enabled', level=-1).reset_index(drop=0)
-_dis = aggd.xs('disabled', level=-1).reset_index(drop=0)
-_en
+vz.plot_errb(_agg_geo.reset_index(drop=0)) | vz.plot_errb(_agg_med.reset_index(drop=0))
 
 # %%
 
 # %%
-_en.pat(x='date', y='p50', e1='p05', e2='p95', st='-', nz=0)
-
-# %%
+vz.plot_errb(_paggd)
 
 # %%
 est_statistic(h2, stat_fn=gmean)
@@ -245,10 +306,6 @@ plt.plot(h2.dir_alpha_all)
 # %%
 print(h1.dir_alpha_all)
 print(h2.dir_alpha_all)
-
-# %%
-renorm
-
 
 # %%
 h1.dir_alpha_all.sum()

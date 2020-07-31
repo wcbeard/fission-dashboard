@@ -37,3 +37,9 @@ worthy goals
 # Resources
 * [BQ creds]
 (https://docs.telemetry.mozilla.org/cookbooks/bigquery/access.html#api-access)
+
+# Bigquery IO
+
+- `client.load_table_from_dataframe(df, table)`
+    - no [{'key': 1, 'value': 1.2}]
+    - ArrowTypeError: Unknown list item type: struct<key: int64, value: double>

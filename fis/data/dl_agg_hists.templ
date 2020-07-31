@@ -1,0 +1,45 @@
+CREATE TEMP FUNCTION extract_float_map(input STRING) AS (
+  ARRAY(
+    SELECT
+      STRUCT(
+        SAFE_CAST(SPLIT(entry, ':')[OFFSET(0)] AS INT64) AS key,
+        SAFE_CAST(SPLIT(entry, ':')[OFFSET(1)] AS FLOAT64) AS value
+      )
+    FROM
+      UNNEST(SPLIT(REPLACE(TRIM(input, '{{}}'), '"', ''), ',')) AS entry
+    WHERE
+      LENGTH(entry) > 0
+  )
+);
+
+CREATE TEMP FUNCTION hist_float(input STRING) AS (
+  -- https://raw.githubusercontent.com/mozilla/bigquery-etl/master/mozfun/hist/extract/udf.sql
+  CASE
+  WHEN
+    STARTS_WITH(TRIM(input), '{{')
+  THEN
+    -- Input is a histogram in the classic JSON representation.
+    STRUCT(
+      CAST(JSON_EXTRACT_SCALAR(input, '$.bucket_count') AS INT64) AS bucket_count,
+      CAST(JSON_EXTRACT_SCALAR(input, '$.histogram_type') AS INT64) AS histogram_type,
+      CAST(JSON_EXTRACT_SCALAR(input, '$.sum') AS INT64) AS `sum`,
+      ARRAY(
+        SELECT
+          CAST(bound AS INT64)
+        FROM
+          UNNEST(JSON_EXTRACT_ARRAY(input, '$.range')) AS bound
+      ) AS `range`,
+      extract_float_map(JSON_EXTRACT(input, '$.values')) AS `values`
+    )
+  END
+);
+
+CREATE TEMP FUNCTION vals(h string) AS (
+  hist_float(h).values
+);
+
+
+select
+  date, br, n_cid,
+  {hist_cols}
+from `moz-fx-data-shared-prod`.analysis.wbeard_fission_test_dirp
