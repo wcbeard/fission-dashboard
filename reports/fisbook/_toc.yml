@@ -1,0 +1,6 @@
+- file: hist_plots
+- file: intro
+- file: content
+  sections:
+    - file: markdown
+    - file: notebooks
