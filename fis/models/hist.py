@@ -1,8 +1,11 @@
-from typing import Dict
+import itertools as it
+from typing import Dict, List
+
 
 import numpy.random as nr  # type: ignore
 import numpy as np
 from numba import njit, typed  # type: ignore
+import pandas as pd
 import scipy.stats as sts  # type: ignore
 
 import fis.utils.fis_utils as fu
@@ -28,6 +31,11 @@ def typed_list(l):
     for e in l:
         tl.append(e)
     return tl
+
+
+@njit
+def seed(n):
+    nr.seed(n)
 
 
 def sample_arr(n_reps, n_per_rep, p_norm, ks, quants=[.25, .5, .75]):
@@ -175,7 +183,7 @@ def est_statistic(
     n_hists=10_000,
     client_draws=10,
     stat_fn=np.mean,
-    ret_quantiles=[.05, .5, .95],
+    quantiles=[.05, .5, .95],
 ):
     dir_dict = sorted(dir_dict.items())
     ks, alpha = zip(*dir_dict)
@@ -185,12 +193,170 @@ def est_statistic(
     for hist in sampled_hists:
         samps_i = nr.choice(ks, p=hist, size=client_draws)
         stats.append(stat_fn(samps_i))
-    if ret_quantiles is not None:
-        qs = np.quantile(stats, ret_quantiles)
-        return dict(zip(map(fu.rn_prob_col, ret_quantiles), qs))
-    return stats
+    if quantiles is not None:
+        qs = np.quantile(stats, quantiles)
+        return dict(zip(map(fu.rn_prob_col, quantiles), qs))
+    return np.array(stats)
 
 
+#########################
+# Multimodal Histograms #
+#########################
+@njit
+def rand_choice_scalar(arr, prob_cum_sum):
+    """
+    From https://github.com/numba/numba/issues/2539#issuecomment-507306369
+    :param arr: A 1D numpy array of values to sample from.
+    :param prob: A 1D numpy array of probabilities for the given samples.
+    :return: A random sample from the given array with a given probability.
+    np.cumsum(prob)
+    """
+    return arr[np.searchsorted(prob_cum_sum, np.random.random(), side="right")]
+
+
+@njit
+def rand_choice(arr, size, prob):
+    prob /= prob.sum()
+    cs = np.cumsum(prob)
+
+    res = np.empty(size, dtype=arr.dtype)
+    for i in range(size):
+        res[i] = rand_choice_scalar(arr, cs)
+    return res
+
+
+@njit
+def summarize_multimodal_hist_arr(samps, bin_ix_lookup, norm=True):
+    "As array"
+    n_bins_p1 = len(bin_ix_lookup) + 1
+    a = np.zeros(n_bins_p1, np.float64)
+    for s in samps:
+        ix = bin_ix_lookup[s] if s in bin_ix_lookup else -1
+        a[ix] += 1
+    if norm:
+        return a / np.sum(a)
+    return a
+
+
+@njit
+def draw_mm_samps_from_dir(
+    sampled_hists, ix_lookup, ks, client_draws=10, norm=True
+):
+    n = len(sampled_hists)
+    res = np.empty((n, len(ix_lookup) + 1))
+    seed(0)
+    for i in range(n):
+        client_samples = rand_choice(
+            ks, size=client_draws, prob=sampled_hists[i]
+        )
+        # print('client', i, client_samples)
+        res[i] = summarize_multimodal_hist_arr(
+            client_samples, ix_lookup, norm=norm
+        )
+        # print(res[i], i)  # , client_samples)
+    return res
+
+
+def est_statistic_mm(
+    dir_dict: Dict[int, float],
+    bins: List[int],
+    n_hists=10_000,
+    client_draws=10,
+    quantiles=[.05, .5, .95],
+):
+    """
+    If quantiles, return df with columns==quantiles, index == bins.
+    """
+    ks, alpha = map(np.array, zip(*sorted(dir_dict.items())))
+    bins = sorted(bins)
+    bin_cols = bins + [-1]
+    ix_lookup = typed_dict(dict(zip(bins, it.count())))
+
+    nr.seed(0)
+    sampled_hists = nr.dirichlet(alpha, size=n_hists)
+    binned_samps = draw_mm_samps_from_dir(
+        sampled_hists, ix_lookup, ks, client_draws=client_draws
+    )
+    binned_samps = pd.DataFrame(binned_samps, columns=bin_cols)
+
+    if quantiles is not None:
+        bsq = binned_samps.quantile(quantiles).T
+        bsq.index.name = "bins"
+        return bsq
+    return binned_samps
+
+
+def est_statistic_mm_beta(
+    dir_dict: Dict[int, float], bins: List[int], quantiles=[.05, .5, .95]
+):
+    """
+    return df with columns==quantiles, index == bins.
+    """
+    a_plus_b = sum(dir_dict.values())
+    bin_ab_dct = {}
+    for bin in bins:
+        a = dir_dict.get(bin, 0) + 1
+        b = a_plus_b - a
+        bin_ab_dct[bin] = (a, b)
+    a_other = sum([v for k, v in dir_dict.items() if k not in bins]) + 1
+    bin_ab_dct[-1] = (a_other, a_plus_b - a_other)
+
+    quantiles_dct = {
+        bin: sts.beta(a, b).ppf(quantiles)
+        for bin, (a, b) in bin_ab_dct.items()
+    }
+    df = pd.DataFrame(quantiles_dct, index=quantiles).T
+    df.index.name = "bins"
+    return df
+
+
+def mm_hist_quantiles2(df, hcol="gc_slice_during_idle", bins=[0, 98, 100]):
+    df = df[["date", "br", hcol]]
+    res = pd.concat(
+        [
+            (
+                est_statistic_mm_beta(h, bins)
+                .rename(columns=fu.rn_prob_col)
+                .assign(br=br, date=date)
+                .reset_index(drop=0)
+            )
+            for date, br, h in df.itertuples(index=False)
+        ],
+        axis=0,
+        ignore_index=True,
+    )
+    return res
+
+
+def _mm_hist_quantiles(
+    df,
+    hcol="gc_slice_during_idle",
+    bins=[0, 98, 100],
+    client_draws=11,
+    n_hists=1_000,
+):
+    df = df[["date", "br", hcol]]
+    res = pd.concat(
+        [
+            (
+                est_statistic_mm(
+                    h, bins, client_draws=client_draws, n_hists=n_hists
+                )
+                .rename(columns=fu.rn_prob_col)
+                .assign(br=br, date=date)
+                .reset_index(drop=0)
+            )
+            for date, br, h in df.itertuples(index=False)
+        ],
+        axis=0,
+        ignore_index=True,
+    )
+    return res
+
+
+#########
+# Tests #
+#########
 def test_gmean_hist2d(counts, ks, eps=1e-6):
     est1 = enumerate_hists(counts, ks, eps)
     est2 = gmean_hist2d(counts, np.array(ks), eps=eps)
@@ -206,3 +372,22 @@ def test_normp():
     should_be2 = np.array([[1, 1], [2, 2]])
     assert (ns == should_be2).all()
     return ns
+
+
+def test_rand_choice():
+
+    seed(0)
+    ks = np.r_[0, 1, 3, 5, 7, 9, 11]
+    vs = np.r_[0.09, 0.01, 0.01, 0.01, 0.01, 0.04, 0.01]
+    bunch_of_samps = rand_choice(ks, 100_000, vs)
+    d = pd.DataFrame(
+        {
+            "emp": pd.Series(bunch_of_samps)
+            .value_counts(normalize=0)
+            .sort_index()
+            .pipe(lambda x: x.div(x.sum())),
+            "base": vs,
+        }
+    ).assign(dif=lambda df: (df.emp - df.base).abs())
+    print(f"Max diff: {d.dif.max():.1%}")
+    return d

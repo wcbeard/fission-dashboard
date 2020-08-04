@@ -1,6 +1,8 @@
 import json
 
 from fire import Fire
+import pandas as pd
+
 from fis.utils import bq
 from fis import app_dir
 
@@ -11,16 +13,21 @@ def read_sql(fn="agg_hists.templ") -> str:
     return templ
 
 
-hist_cols = [
+unimodal_histograms = [
     "unq_tabs",
     "unq_sites_per_doc",
-    "cycle_collector_slice_during_idle",
-    "gc_slice_during_idle",
     "cycle_collector",
     "cycle_collector_max_pause",
     "gc_max_pause_ms_2",
     "gc_ms",
 ]
+
+multimodal_histograms = [
+    "cycle_collector_slice_during_idle",
+    "gc_slice_during_idle",
+]
+
+hist_cols = unimodal_histograms + multimodal_histograms
 
 
 def transform_kval_json_str(st):
@@ -49,6 +56,16 @@ def dl_agg_query():
     sql = read_sql("dl_agg_hists.templ")
     h_cols = ",\n  ".join(f"vals({h}) as {h}" for h in hist_cols)
     return sql.format(hist_cols=h_cols)
+
+
+def proc_hist_dl(df):
+    def list_of_docs_to_dict(l):
+        return {d["key"]: d["value"] + 1 for d in l}
+
+    txf_fns = {
+        h: lambda df, h=h: df[h].map(list_of_docs_to_dict) for h in hist_cols
+    }
+    return df.assign(**txf_fns).assign(date=lambda df: pd.to_datetime(df.date))
 
 
 def main(
