@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.5.0
+#       jupytext_version: 1.5.2
 #   kernelspec:
 #     display_name: Python 3
 #     language: python
@@ -22,11 +22,11 @@ from boot_utes import add_path, path, reload, run_magics
 
 add_path(
     "..",
-    "/Users/wbeard/repos/fis/fis/",
-    "/Users/wbeard/repos/fis/",
+    "~/repos/fis/fis/",
+    "~/repos/fis/",
     "~/repos/myutils/",
 )
-add_path("/Users/wbeard/repos/dscontrib-moz/src/")
+# add_path("/Users/wbeard/repos/dscontrib-moz/src/")
 
 # %%
 # HIDDEN
@@ -51,36 +51,35 @@ W = 800
 dfh2_ = bq.bq_query(loh.dl_agg_query())
 dfh2 = loh.proc_hist_dl(dfh2_)
 
-
-# %%
-# HIDDEN
-def jlab_kernel():
-    import sys
-
-    return any(c.startswith("/Users/wbeard/Library/Jupyter") for c in sys.argv)
-
-
-if jlab_kernel():
-    from matplotlib import MatplotlibDeprecationWarning
-
-    import dscontrib.wbeard as dwb
-    from utils.fis_imps import *
-
-    exec(pu.DFCols_str)
-    exec(pu.qexpr_str)
-    run_magics()
-    # import utils.en_utils as eu; import data.load_data as ld; exec(eu.sort_dfs_str)
-
-    mu.set_import_name(mu)
-    sns.set_style("whitegrid")
-    S = Series
-    D = DataFrame
-
-    import dscontrib.wbeard.altair_utils as aau
-
-    aau.set_ds(A)
-
-    DataFrame.pat = aau.pat
+# %% [raw]
+# # HIDDEN
+# def jlab_kernel():
+#     import sys
+#
+#     return any(c.startswith("/Users/wbeard/Library/Jupyter") for c in sys.argv)
+#
+#
+# if jlab_kernel():
+#     from matplotlib import MatplotlibDeprecationWarning
+#
+#     import dscontrib.wbeard as dwb
+#     from utils.fis_imps import *
+#
+#     exec(pu.DFCols_str)
+#     exec(pu.qexpr_str)
+#     run_magics()
+#     # import utils.en_utils as eu; import data.load_data as ld; exec(eu.sort_dfs_str)
+#
+#     mu.set_import_name(mu)
+#     sns.set_style("whitegrid")
+#     S = Series
+#     D = DataFrame
+#
+#     import dscontrib.wbeard.altair_utils as aau
+#
+#     aau.set_ds(A)
+#
+#     DataFrame.pat = aau.pat
 
 
 # %%

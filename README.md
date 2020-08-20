@@ -1,45 +1,59 @@
-fis
+fission dashboard
 ==============================
 
-* [Begin to scope Fission dashboard](https://jira.mozilla.com/browse/DS-702)
+The significant components of this repo so far are
 
+- query to summarize fission branches at the daily level
+    - see `load_hist_aggs.sh` below
+    - summed histograms saved to
+    `moz-fx-data-shared-prod.analysis.wbeard_fission_test_dirp`
+- jupyterlab dev environment for the dashboard (`notebooks/hist_plots.ipynb`)
+    - Downloads summarized histograms
+    - Creates credible intervals with Dirichlet model (`fis.models.hist.est_statistic` using geometric mean)
+- script to convert jupyter notebook into a dashboard ()
 
-Create docker container:
+Build conda environment, start jupyter kernel.
+
+## Create env
+```sh
+conda env create --file env_fis.yaml
 ```
-docker build -t ds_702_prod .
+
+## Update histogram table summary
+The file has the command:
+```sh
+python -m fis.data.load_agg_hists \
+    --sub_date_start='2020-06-01' \
+    --sub_date_end='2020-07-01' \
+    --sample=100 \
+    --ret_sql=False 
 ```
 
-This will build a container based on `Dockerfile`. When you update a line in the
-Dockerfile, it will rebuild the container from that line onward. Put time
-consuming lines earlier in the file.
+You'll need to update the `sub_date_start` and `sub_date_end` commands (or
+better yet, figure out how to get this to update itself).
 
-
+```sh
+bash fis/data/load_hist_aggs.sh
 ```
-docker run -v=$HOME/.config/gcloud:/root/.config/gcloud -v
-~/repos/fis/fission:/fission -it ds_702_prod /bin/bash
-docker run -v ~/repos/fis/fission:/fission -it ds_702_prod /bin/bash
 
-
-docker run -it -v ~/.R:/root/.R -v ~/.config:/root/.config /bin/bash
-docker run -it /bin/bash
+## Launch jupyter dev environment
 ```
-run 
+conda activate fission_db
+jupyter lab
+```
+
+## Convert notebook into dashboard
+
+```sh
+cd reports
+bash build.sh
+```
+
+* saves output to `reports/fisbook/_build/html/hist_plots.html`
+* `_config.yml` is an important file
 
 
-- version
+## Other resources
 
-worthy goals
-- python bq read/write
-- gsutil read/write
-- bq cmdline
-
-
-# Resources
-* [BQ creds]
-(https://docs.telemetry.mozilla.org/cookbooks/bigquery/access.html#api-access)
-
-# Bigquery IO
-
-- `client.load_table_from_dataframe(df, table)`
-    - no [{'key': 1, 'value': 1.2}]
-    - ArrowTypeError: Unknown list item type: struct<key: int64, value: double>
+A starting point for a crash rates query can be found at
+`fis/data/crash_rates.sql`.

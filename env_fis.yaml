@@ -1,0 +1,18 @@
+name: fission_db
+# Stands for fission dashboard environment
+channels:
+ - defaults
+ # - conda-forge
+dependencies:
+- python=3.7
+- fire  # =0.2.1
+- joblib  # =0.14.1
+- pandas-gbq  # =0.13.0
+- pandas  # =0.25.3
+- pyarrow  # =0.15.1
+- jupyterlab
+
+- pip
+- pip:
+  - jupytext
+  - jupyter-book
